@@ -1,0 +1,1 @@
+VAMToolbox branch devR2R, commit d63e92426687073894371547e500b1d73276db2b (https://github.com/computed-axial-lithography/VAMToolbox/tree/devR2R). Unmodified copy, used only by run_reference.py to run imported/.

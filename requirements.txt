@@ -1,0 +1,23 @@
+# time, logging, msvcrt, warnings are part of Python's standard library: do not list them here.
+numpy
+matplotlib
+scipy
+astra-toolbox
+# torch (CUDA build) is used by both algorithms (algorithms/adhoc and algorithms/reference). The RTX 50xx (Blackwell) GPU needs CUDA >= 12.8:
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch
+# torchvision is imported by the vamtoolbox devR2R branch in algorithms/reference/original/ (reference algorithm only)
+torchvision
+# vamtoolbox is not on PyPI and does not declare its dependencies, so they are listed below
+vamtoolbox @ https://github.com/computed-axial-lithography/VAMToolbox/archive/refs/heads/main.zip
+opencv-python
+dill
+pillow
+scikit-image
+joblib
+vedo
+pyvista
+trimesh
+pyglet
+PyOpenGL
+tqdm
