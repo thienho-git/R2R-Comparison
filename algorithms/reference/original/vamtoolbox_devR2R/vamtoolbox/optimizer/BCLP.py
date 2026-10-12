@@ -389,10 +389,23 @@ class BCLPNorm:
 
 
     def imposeSinogramConstraints(self, g):
+        # [MODIFIED, R2R capstone] Original lines (devR2R commit d63e924), commented out:
+        # if self.bit_depth is not None:
+        #     g = vamtoolbox.util.data.discretize(g, self.bit_depth, [0.0, np.amax(g)])
+        #
+        # g = np.clip(g, a_min=self.glb, a_max=self.gub)
+        #
+        # Problem: discretize() ran BEFORE the clip. discretize() computes np.digitize(x, bins) - 1, which is -1 for any
+        # x < 0, and bins[-1] is the MAXIMUM level. So every sinogram pixel that a gradient step pushed below 0 (a ray
+        # the optimizer wants off) was set to full intensity, the background was overdosed and the whole volume printed.
+        # Fix: the only change is the order. Clip first, then discretize (same global 8-bit floor quantization, same
+        # range [0, max(g)], every iteration). A final clip keeps the upper bound gub, as the original last step did.
+        g = np.clip(g, a_min=self.glb, a_max=self.gub) # [MODIFIED] moved before discretize
+
         if self.bit_depth is not None:
             g = vamtoolbox.util.data.discretize(g, self.bit_depth, [0.0, np.amax(g)])
 
-        g = np.clip(g, a_min=self.glb, a_max=self.gub) 
+        g = np.clip(g, a_min=self.glb, a_max=self.gub) # [MODIFIED] unchanged original clip, kept after discretize
 
         return g
 

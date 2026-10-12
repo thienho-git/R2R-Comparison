@@ -1,1 +1,2 @@
-VAMToolbox branch devR2R, commit d63e92426687073894371547e500b1d73276db2b (https://github.com/computed-axial-lithography/VAMToolbox/tree/devR2R). Unmodified copy, used only by run_reference.py to run imported/.
+VAMToolbox branch devR2R, commit d63e92426687073894371547e500b1d73276db2b (https://github.com/computed-axial-lithography/VAMToolbox/tree/devR2R). Used by the reference script original/xs_test_r2r_optimization_for_target_matrix.py.
+Unmodified copy except one fix, marked [MODIFIED] with the original lines kept as comments: vamtoolbox/optimizer/BCLP.py, BCLPNorm.imposeSinogramConstraints now clips the sinogram to [blb, bub] before discretize() instead of after (discretize() mapped every negative value to the maximum level).
