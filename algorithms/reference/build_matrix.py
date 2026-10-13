@@ -3,7 +3,7 @@ Build the single-slice propagation matrix P_UW->g that the reference script load
 
 Why: when that file is missing, the reference script ray-traces it on its full 3D target (N_r x N_z = 306800 rays for
 the TPMS target), which runs for hours and then exceeds 8 GB of GPU memory in coalesce(). The matrices actually used
-(e.g. algorithms/adhoc/data/matrix_sino2uw_alpha_mat=2.2_...pt, 1475 rows) are single-slice: the reference propagator reuses one slice
+(e.g. matrix_sino2uw_alpha_mat=2.2_...pt, 1475 rows) are single-slice: the reference propagator reuses one slice
 matrix for every z. This script makes that matrix with the same code path and settings as the script
 (TargetGeometryR2R, homogeneous_r2r attenuation/absorption/index models, eikonal ray tracing at 269.9 deg,
 PyTorchRayTracingPropagator.buildPropagationMatrix), on one z slice of the target.
@@ -65,7 +65,7 @@ def buildMatrix(config, out_file):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--alpha-mat", type=float, default=None, help="override alpha_mat (cm^-1), e.g. to rebuild the adhoc demo matrix (2.2)")
+    parser.add_argument("--alpha-mat", type=float, default=None, help="override alpha_mat (cm^-1), e.g. 2.2")
     parser.add_argument("--out", default=None, help="output .pt (default: the file name the reference script looks for)")
     addGeometryArgument(parser)
     args = parser.parse_args(argv)

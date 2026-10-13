@@ -65,9 +65,8 @@ targets/                  THE COMMON INPUT
 algorithms/
     adhoc/                ALGORITHM 1: ad hoc implementation of the article
         run.py            common target -> outputs/runs/<run>/adhoc
-        demo.py           standalone single-slice demo with plots (not part of the comparison)
-        data/             ray-traced propagation matrix used by demo.py
-        *.py              propagator (r2r_wrapping.py), optimizer (BCLP.py), geometry, plots
+        propagator.py     shift-window R2R propagator (the article's algorithm) + BCLP glue
+        BCLP.py           optimizer
     reference/            ALGORITHM 2: reference built from VAMToolbox
         run.py            common target -> outputs/runs/<run>/reference
         original/         the reference script (algorithm untouched; only setup and input/output lines edited)
@@ -89,7 +88,6 @@ outputs/
             adhoc/        adhoc results (same .npy files), loss_history.npz, run_info.json
             logs/         reference.log, adhoc.log: console output of each algorithm
     matrices/             propagation matrices, one per geometry configuration, used by both algorithms
-    adhoc_demo/           demo.py output
     reference_standalone/ results of the reference script run by hand (created when used)
 ```
 

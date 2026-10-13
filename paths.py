@@ -20,7 +20,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 ALGORITHMS_DIR = ROOT/"algorithms"
-ADHOC_DEMO_MATRIX = ALGORITHMS_DIR/"adhoc"/"data"/"matrix_sino2uw_alpha_mat=2.2_n_sur=1.33_n_mat=1.49_r_i=0.76_tau=0.3_deg_inc=0.5.pt"
 
 # Reference algorithm: the original script (only its setup and input/output lines edited) and the devR2R vamtoolbox
 REFERENCE_ORIGINAL_DIR = ALGORITHMS_DIR/"reference"/"original"
@@ -29,7 +28,6 @@ VAMTOOLBOX_DEVR2R = REFERENCE_ORIGINAL_DIR/"vamtoolbox_devR2R" #contains the vam
 
 OUTPUT_DIR = ROOT/"outputs"
 RUNS_DIR = OUTPUT_DIR/"runs"
-ADHOC_DEMO_DIR = OUTPUT_DIR/"adhoc_demo"
 MATRIX_DIR = OUTPUT_DIR/"matrices" #also the reference script's default --matrix-dir
 
 

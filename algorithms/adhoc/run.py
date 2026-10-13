@@ -28,9 +28,21 @@ from algorithms.reference.config import referenceConfig
 from paths import KeepAwake, TeeOutput, logFile, referenceMatrix, resultsDir
 from targets.registry import addRunArgument, openRun
 
-from .create_geometry import createGeometry
-from .r2r_wrapping import minimizeR2RBCLP
-from .run_optimization import bclpOptions
+from .propagator import R2RAlgebraicPropagator, minimizeR2RBCLP
+
+
+def bclpOptions(**kwargs):
+    """
+    vamtoolbox Options for BCLP, completed with the options read by the local BCLP.py that vamtoolbox may not define.
+    kwargs are passed to vamtoolbox.optimize.Options (method, n_iter, p, q, eps, weight, learning_rate, g0, ...).
+    """
+    options = vamtoolbox.optimize.Options(**{"method": "BCLP", **kwargs})
+    defaults = {"momentum": 0.0, "regularize_l": 0.0, "g0": None, "blb": 0, "bub": None, "bit_depth": None,
+                "exit_param": None, "save_img_path": None}
+    for key, value in defaults.items():
+        if not hasattr(options, key):
+            setattr(options, key, value)
+    return options
 
 
 def checkTargetAgainstReference(name, target):
@@ -68,19 +80,18 @@ def run(name, target, n_iter):
 
     matrix_file = referenceMatrix(config.alpha_mat)
     print(f"Propagation matrix: {matrix_file.name}")
-    target_geo, r2r_geo, propagator = createGeometry(target=target, matrix_file=str(matrix_file), pad_target=False,
-                                                     propagator_kwargs=dict(dtype=torch.float32))
+    propagator = R2RAlgebraicPropagator.fromMatrixFile(matrix_file, dtype=torch.float32)
     n_theta = propagator.nAngles(target.shape[1])
 
     #Optimization settings of the reference script
     response_model = vamtoolbox.response.ResponseModel(B=10)
-    g0 = propagator.forward(response_model.map_inv(target_geo.array))
+    g0 = propagator.forward(response_model.map_inv(target))
     g0 /= n_theta*100
-    weight = np.ones_like(target_geo.array)
-    eps_map = np.ones_like(target_geo.array)
-    eps_map[target_geo.array > 0] = 0.01
-    eps_map[target_geo.array == 0] = 0.05
-    weight[target_geo.array > 0] = 3
+    weight = np.ones_like(target)
+    eps_map = np.ones_like(target)
+    eps_map[target > 0] = 0.01
+    eps_map[target == 0] = 0.05
+    weight[target > 0] = 3
     options = bclpOptions(n_iter=n_iter, filter="ram-lak", verbose="time", p=3, learning_rate=0.05, regularize_l=0,
                           momentum=0.5, response_model=response_model, eps=eps_map, g0=g0, weight=weight, bit_depth=8)
     print(f"g0 {g0.shape} {g0.dtype}, N_theta = {n_theta}, device {propagator.device}")
@@ -89,12 +100,12 @@ def run(name, target, n_iter):
         torch.cuda.reset_peak_memory_stats()
     start = time.time()
     with KeepAwake():
-        opt_sino, dose, mapped_dose, logs = minimizeR2RBCLP(target_geo.array, propagator, options)
+        opt_sino, dose, mapped_dose, logs = minimizeR2RBCLP(target, propagator, options)
     elapsed = time.time() - start
     peak_gpu_mb = torch.cuda.max_memory_allocated()/1024**2 if torch.cuda.is_available() else None
     print(f"Elapsed time: {elapsed:.1f} s, peak GPU memory {peak_gpu_mb:.0f} MB")
 
-    np.save(out_dir/"target.npy", target_geo.array)
+    np.save(out_dir/"target.npy", target)
     np.save(out_dir/"sinogram.npy", opt_sino)
     np.save(out_dir/"reconstruction.npy", dose)
     np.save(out_dir/"response.npy", mapped_dose)

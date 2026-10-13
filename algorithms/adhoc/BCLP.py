@@ -30,6 +30,7 @@ class LogPerf:
         self.t0 = np.nan
         self.is_converged = False
 
+    # [UNUSED] Not called in this project: algorithms/adhoc/run.py saves the loss history itself (loss_history.npz).
     def save(self,filename):
         np.savetxt(filename,
                    np.column_stack([range(self.options.n_iter+1),self.iter_times,self.loss,self.l0,self.l1,self.l2,self.lf,self.l0_eps0,self.l1_eps0,self.l2_eps0,self.lf_eps0]),
@@ -104,7 +105,7 @@ class BCLPNorm:
         # [W/UW NOTE] Terms from the R2R paper: W (wrapped) is the photoresist curved around the cylindrical roller, in ordinary x-y coordinates about the rotation axis.
         # [W/UW NOTE] UW (unwrapped) is the same photoresist laid flat as a web, in rho-l coordinates (rho = thickness, l = length along the web).
         # [W/UW NOTE] INPUT: target_geo is in whatever domain the projector expects. With the default vamtoolbox projector (projector=None) it is a W-domain / conventional-CAL x-y(-z) grid centered on the rotation axis.
-        # [W/UW NOTE] In this project, r2r_wrapping.minimizeR2RBCLP passes projector = R2RAlgebraicPropagator (the composite P_UW->g, e.g. the ray-traced data/ matrix), so target_geo, dose and mapped_dose are all in the UW domain.
+        # [W/UW NOTE] In this project, propagator.minimizeR2RBCLP passes projector = R2RAlgebraicPropagator (the composite P_UW->g, the ray-traced matrix of outputs/matrices/), so target_geo, dose and mapped_dose are all in the UW domain.
         # [W/UW NOTE] This file itself never converts UW <-> W; that is done by the projector.
         self.target_geo = target_geo
         self.target_geo.array = np.atleast_3d(self.target_geo.array) #atleast_3d should be used here when all formulation accepts 2D array as 3D array with third dimension of 1.
@@ -155,6 +156,8 @@ class BCLPNorm:
         self.prev_update_iter = -1
 
         # [W/UW NOTE] Live plots (verbose 'plot' / 'plot_demo') show target_geo, dose and mapped_dose on the same W-domain x-y grid. They show WRAPPED results; nothing is unrolled for display.
+        # [UNUSED] verbose 'plot' / 'plot_demo' (here and in callback, gradientDescent, minimizeBCLP) are never used in this project:
+        # [UNUSED] the runs use verbose='time', and vamtoolbox's EvolvingPlot expects a W-grid TargetGeometry, not the UW target.
         if self.verbose == 'plot':
             self.dp = vamtoolbox.displaygrayscale.EvolvingPlot(target_geo,self.logs.options.n_iter+1, self.save_img_path)
         elif self.verbose == 'plot_demo':
@@ -264,6 +267,7 @@ class BCLPNorm:
         #This absolute sign is to avoid letting the negative values of mapped_dose_error_from_band to create NaNs in **p operation when p<1. The NaNs would avoid the sum to be properly evaluated.
         #These originally negative voxels would not contribute to the loss_integrand due to selection by v. 
         # loss_integrand = self.v*self.weight*np.abs(self.mapped_dose_error_from_band)**self.p
+        # [UNUSED] original_method is always False: the first branch below never runs.
         if original_method := False: #set true to use original method, set false to use updated method. TODO
             # Original method with regularization term incorrectly included in the loss_integrand.
             loss_integrand = self.v*self.weight*np.abs(self.mapped_dose_error_from_band)**self.p + self.regularize_l*self.mapped_dose**2
@@ -297,6 +301,7 @@ class BCLPNorm:
         #This absolute sign is to avoid letting the negative values of mapped_dose_error_from_band to create NaNs in **(p-1) operation when p<2. The NaNs would start to spread throughout g_iter can cause errors.
         #These originally negative voxels would not contribute to the operand due to selection by v. 
         # operand = self.v * self.weight * (np.abs(self.mapped_dose_error_from_band)**(self.p-1)) * np.sign(self.mapped_dose_error_from_f_T) * self.response_model.dmapdf(self.dose)
+        # [UNUSED] original_method is always False: the first branch below never runs.
         if original_method := False: #set true to use original method, set false to use updated method
             operand = self.v * self.weight * (np.abs(self.mapped_dose_error_from_band)**(self.p-1)) * np.sign(self.mapped_dose_error_from_f_T) * self.response_model.dmapdf(self.dose) + 2*self.regularize_l*self.mapped_dose
 
@@ -517,6 +522,8 @@ class BCLPNorm:
         
         return is_converged or is_loss_zero
 
+# [UNUSED] Not called in this project: propagator.minimizeR2RBCLP uses BCLPNorm directly with the R2R propagator.
+# [UNUSED] This is vamtoolbox's conventional CAL (W domain) front end; its [W/UW NOTE] comments describe that use, not R2R.
 def minimizeBCLP(target_geo, proj_geo, options, output = "packaged"):
     """
     Band constraint Lp norm minimization. 

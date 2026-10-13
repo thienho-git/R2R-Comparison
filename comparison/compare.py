@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from algorithms.adhoc.create_geometry import createGeometry
+from algorithms.adhoc.propagator import R2RAlgebraicPropagator
 from algorithms.reference.config import referenceConfig
 from paths import RUNS_DIR, logFile, referenceMatrix, resultsDir, runDir, runs
 from targets.registry import addRunArgument, openRun
@@ -108,8 +108,7 @@ def pairMetrics(a, b, rows_per_chunk=64):
 
 def propagatorCheck(reference, config):
     """Adhoc back propagation of the reference sinogram vs the reference dose (same matrix, float64)."""
-    _, _, propagator = createGeometry(target=np.zeros((config.N_rho, config.N_l, 1)), matrix_file=str(referenceMatrix(config.alpha_mat)),
-                                      pad_target=False, propagator_kwargs=dict(dtype=torch.float64, z_batch=16))
+    propagator = R2RAlgebraicPropagator.fromMatrixFile(referenceMatrix(config.alpha_mat), dtype=torch.float64, z_batch=16)
     dose = propagator.backward(np.asarray(reference["sinogram"]))
     return pairMetrics(dose, reference["reconstruction"]), propagator.adjointTest()
 

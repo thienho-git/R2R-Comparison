@@ -14,10 +14,10 @@ Layout (`README.md` has the tree):
 - `main.py`: entry point. Common target → reference → adhoc → compare.
 - `paths.py`: every location (inputs, originals, outputs).
 - `targets/`: the common input. `registry.py` (named targets, `prepareTarget`/`loadTarget`), `prism.py`, `tpms.py`.
-- `algorithms/adhoc/`: ad hoc algorithm. `run.py` (comparison run), `demo.py` (standalone single-slice demo with plots), `data/` (ray-traced α = 2.2 matrix used by the demo), algorithm modules.
+- `algorithms/adhoc/`: ad hoc algorithm. `run.py` (comparison run), `propagator.py` (shift-window propagator), `BCLP.py` (optimizer).
 - `algorithms/reference/`: reference algorithm. `original/` (the script + `vamtoolbox_devR2R/`, the VAMToolbox `devR2R` branch at commit d63e924), `run.py`, `config.py`, `build_matrix.py`.
 - `comparison/compare.py`: metrics and figures from the two results folders → the run's `report.md`; rebuilds `outputs/runs/index.md`.
-- `outputs/` (generated): `runs/index.md` (every run, newest first, with loss/IoU of both), `runs/<YYYY-MM-DD_HHMM>_<target>[__<geometry>]_z<slices>/` (one folder per run, never overwritten: `report.md`, `summary.json`, `figures/`, `input/target.{npy,json}`, `reference/`, `adhoc/`, `logs/{reference,adhoc}.log`), `matrices/` (propagation matrices `matrix_sino2uw_<config>.pt`, used by both algorithms), `adhoc_demo/`, `reference_standalone/` (the script run by hand without `--output-dir`).
+- `outputs/` (generated): `runs/index.md` (every run, newest first, with loss/IoU of both), `runs/<YYYY-MM-DD_HHMM>_<target>[__<geometry>]_z<slices>/` (one folder per run, never overwritten: `report.md`, `summary.json`, `figures/`, `input/target.{npy,json}`, `reference/`, `adhoc/`, `logs/{reference,adhoc}.log`), `matrices/` (propagation matrices `matrix_sino2uw_<config>.pt`, used by both algorithms), `reference_standalone/` (the script run by hand without `--output-dir`).
 - Runs: `targets.registry.prepareTarget` starts a run (new folder, `input/target.npy`, geometry saved in `input/target.json`). The later steps (`algorithms.reference.run`, `algorithms.adhoc.run`, `comparison.compare`) share one interface: `--run RUN` (default: the latest run, `paths.resolveRun`); `registry.openRun` loads the target and selects the run's geometry. Both `run.py` write `target`/`sinogram`/`reconstruction`/`response` `.npy` files to `<run>/<algorithm>/` and tee their console to `<run>/logs/<algorithm>.log` (`paths.TeeOutput`).
 
 Windows only: `algorithms/adhoc/BCLP.py` imports `msvcrt`. Pressing `q` during optimization stops the gradient-descent loop.
@@ -32,7 +32,6 @@ The environment is a Python 3.12 venv at `.venv`. Dependencies are in `requireme
 .venv\Scripts\python.exe main.py --list-targets
 .venv\Scripts\python.exe main.py --target prism --geometry tpms_diamond_skel6   # --list-geometries lists the script's cases
 .venv\Scripts\python.exe -m targets.registry --target prism   # each step alone: start a run, then algorithms.reference.run, algorithms.adhoc.run, comparison.compare (latest run, or --run RUN)
-.venv\Scripts\python.exe -m algorithms.adhoc.demo   # band target (UW) -> R2R propagation -> BCLP -> UW and wrapped plots
 .venv\Scripts\python.exe algorithms\reference\original\xs_test_r2r_optimization_for_target_matrix.py [GEOMETRY] [--target-file t.npy] [--output-dir d] [--matrix-dir m]   # the reference script by hand
 ```
 
@@ -42,33 +41,23 @@ There is no test suite, linter or build step. `R2RAlgebraicPropagator.adjointTes
 
 ## Architecture
 
-Ad hoc demo pipeline (`algorithms/adhoc/demo.py`), with every step working in the article's **unwrapped (UW)** domain: a flat web with axes ρ (thickness, rows, ρ = 0 is the inner face r_i, where the light enters) and l (along the web, columns).
-1. `targets.prism.generatePrismSlice` writes a band image (`outputs/adhoc_demo/prism_slice.png`). The band is the whole image; it is bounded by the web thickness and not cropped to a cylinder.
-2. `create_geometry` builds `R2RGeometry` from physical parameters (r_i, tau, deg_inc, n_rho, straight_length) and the propagator. It resamples the image to N_ρ × round(band_length / d_l) voxels, then zero-pads it by N_l − 1 on both ends along l, so N_θ = N_long − N_l + 1. It also takes a voxel array (`target=`, used as is, e.g. `targets.tpms.generateTPMSTarget`) and `pad_target=False`, where the propagator pads implicitly like the reference: only the target voxels are optimized, with the same N_θ = N_obj + N_l − 1.
-   - **The demo uses the precomputed ray-traced matrix in `algorithms/adhoc/data/`** (passed as `matrix_file=`). It includes absorption and refraction. The window (r_i, tau, deg_inc, N_ρ, N_l) is read from the file name and the matrix structure, so `createGeometry`'s physical-parameter arguments are ignored.
-   - Without `matrix_file=`, `createGeometry` falls back to the vamtoolbox standard projector (straight rays only). `standard_projector.buildUWMatrixFromVamtoolbox` takes the explicit single-angle sparse matrix of `vamtoolbox.projectorconstructor` (CPU → `Projector3DParallelSparse.A`, clipped to the inscribed circle) on a square W grid that contains the whole window, and composes it with T into `P_UW→g = P_W→g @ T` (about 2 s to build). It is verified against `projector.forward()` of the wrapped window to about 1e-15. vamtoolbox integrates along array **axis 1** at angle 0; the builder detects this and reorders T to match.
-3. `run_optimization` builds the vamtoolbox `Options` and calls `minimizeR2RBCLP`.
-4. `plot_results` draws the UW target and dose, the sinogram, and the same target and dose wrapped (W) onto the roller at one time step.
+Ad hoc pipeline (`algorithms/adhoc/run.py`), with every step working in the article's **unwrapped (UW)** domain: a flat web with axes ρ (thickness, rows, ρ = 0 is the inner face r_i, where the light enters) and l (along the web, columns).
+1. `R2RAlgebraicPropagator.fromMatrixFile` loads the run's ray-traced matrix (`outputs/matrices/`, absorption and refraction included) and reads the window N_ρ × N_l from its structure (`inferWindowShape`). The common target voxel array is used as is; the propagator pads it implicitly by N_l − 1 along l like the reference, so only the target voxels are optimized and N_θ = N_obj + N_l − 1.
+2. `run.py` sets the reference script's optimization settings (`bclpOptions`, `g0` from forward propagation) and calls `minimizeR2RBCLP`.
 
-The band is wrapped onto the roller only through the propagation matrix. Light propagation happens in the **wrapped (W)** domain, with the web curved around the roller.
+The target is wrapped onto the roller only through the propagation matrix. Light propagation happens in the **wrapped (W)** domain, with the web curved around the roller.
 
-`algorithms/adhoc/r2r_wrapping.py` is the core:
-- The optional precomputed composite single-angle matrix `P_UW→g` (`algorithms/adhoc/data/matrix_sino2uw_*.pt`, and the reference's matrices in `outputs/matrices/`) is a torch sparse COO tensor of shape 1475 × 149552 = N_r × (N_ρ·N_l), with N_ρ = 208 and N_l = 719. The column index is `i_rho*N_l + i_l`. The filename encodes the physical parameters (lengths in cm, `deg_inc` in degrees). `loadPropagationMatrix` reads it with `torch.load(weights_only=True)`.
-- `R2RAlgebraicPropagator` (torch, sparse CSR on CUDA when available, else CPU; processes `z_batch` z-slices at a time; numpy in/out of `dtype`, float64 by default, so `BCLP.py` stays numpy; `implicit_padding` as above): forward unfolds the long UW tomogram into shifting windows (one window per angle/time step; the web advances one l-voxel per `deg_inc`), multiplies by P, and produces a sinogram. Backward applies Pᵀ and folds the windows back by summing overlaps.
-- `R2RGeometry`: the explicit T: UW ↔ W transform (180° wrap around the roller plus two straight runs). It is used for the wrapped plots, for converting targets, and for `composeUWMatrix` (P_UW = P_W @ T). Its conventions follow the reference (devR2R `transformationR2R.WrapTransformation`): ρ row 0 = r_i, l pitch d_l = r_i·Δθ (66 µm), straight runs r_i·π/2. Before, they were inferred from the matrix and used r_o and mid-thickness (79 µm).
+`algorithms/adhoc/propagator.py` is the core (no wrapping happens there: T is inside the matrix):
+- The precomputed composite single-angle matrix `P_UW→g` (`outputs/matrices/matrix_sino2uw_*.pt`) is a torch sparse COO tensor of shape 1475 × 149552 = N_r × (N_ρ·N_l), with N_ρ = 208 and N_l = 719. The column index is `i_rho*N_l + i_l`. The filename encodes the physical parameters (lengths in cm, `deg_inc` in degrees). `loadPropagationMatrix` reads it with `torch.load(weights_only=True)`.
+- `R2RAlgebraicPropagator` (torch, sparse CSR on CUDA when available, else CPU; processes `z_batch` z-slices at a time; numpy in/out of `dtype`, float64 by default, so `BCLP.py` stays numpy; implicit padding as above): forward unfolds the long UW tomogram into shifting windows (one window per angle/time step; the web advances one l-voxel per `deg_inc`), multiplies by P, and produces a sinogram. Backward applies Pᵀ and folds the windows back by summing overlaps.
 - `minimizeR2RBCLP` passes the R2R propagator to `BCLP.BCLPNorm(..., projector=propagator)`, which becomes `self.P`. With `projector=None`, BCLP falls back to the vamtoolbox standard projector, as in conventional CAL. It also passes a minimal `UWTargetGeometry` (anything with `.array`).
-- `plot_results` `time_index` is a roller position (sinogram column), not an iteration. The default is the middle column (509 of 0–1019 for the 2 cm band), which centers the band on the roller bottom. The dose shown is always the final iterate.
 
 ### Interface contract BCLP.py relies on
-- The projector must provide `forward(f)` and `backward(g)`, and optionally `inverseBackward(f, filter)` for the initial sinogram. BCLP's gradient is `P.forward(...)`, so `backward` must be the exact adjoint of `forward`.
+- The projector must provide `forward(f)` and `backward(g)`. The R2R propagator has no `inverseBackward`, so `options.g0` must be given (`run.py` does). BCLP's gradient is `P.forward(...)`, so `backward` must be the exact adjoint of `forward`.
 - Sinograms are kept as `(detector, angle, z)`, called "cylindrical" in the code. The optimizer flattens them to 1D for the update and reshapes them back using `g0_shape` (`checkSinogramShape`). Discretization with `bit_depth` works per angle along **axis 1**.
-- `BCLP.py` reads option attributes that `vamtoolbox.optimize.Options` may not define (`momentum`, `regularize_l`, `g0`, `blb`, `bub`, `bit_depth`, `exit_param`, `save_img_path`). `run_optimization.py` fills in these defaults.
+- `BCLP.py` reads option attributes that `vamtoolbox.optimize.Options` may not define (`momentum`, `regularize_l`, `g0`, `blb`, `bub`, `bit_depth`, `exit_param`, `save_img_path`). `run.py` `bclpOptions` fills in these defaults.
 
 ### Gotchas
-- Learning rate depends on which matrix is used:
-  - vamtoolbox projector: 1e-6 is monotone, 3e-6 is the default (faster, slightly noisy), and 1e-5 or higher oscillates.
-  - `data/` matrix (used by the demo): 1e-4, monotone in the first iterations (about 0.09 s per iteration on the RTX 5050 GPU for N_θ ≈ 1000; it was 1.4 s with scipy on CPU).
-- Cost with the vamtoolbox projector (measured before the torch port, scipy on CPU): about 2 s per iteration for the default 2 cm band (N_θ ≈ 970, P is 1469 × 149136 with about 0.74 M nonzeros).
 - Comments tagged `[WRAP NOTE]` in `BCLP.py` use "wrap/unwrap" to mean only array reshaping. Comments tagged `[W/UW NOTE]` (written when the pipeline was conventional CAL) use the article's physical W/UW domains. The two are unrelated.
 - vamtoolbox's own `pyTorchAlgebraicPropagation` is the conventional single-matrix P·f. It has no shift window and requires torch.
 
@@ -82,7 +71,7 @@ The band is wrapped onto the roller only through the propagation matrix. Light p
   - The geometry sets α, n, r_i, τ, deg_inc, hence the matrix (`build_matrix.py` builds a missing one in about 1 min). Run folder names get `__<geometry>` after the target when it is not the default.
   - `reference-tpms` is reproducible only for diamond geometries: bcc-skel is not in `targets/tpms.py`, cubic-skel uses `p_cubic`/`shrink_z`, and two cases load `.mat` files that are not available. Every geometry works with the other targets.
 - **Memory:** the full reference target is 208 × 753 × 208. Its BCLP needs about 25 GB of RAM (float64 sinograms of 1475 × 1471 × 208), so the default is `--z-slices 16` (evenly spaced, indices saved in `target.json`). Propagation is slice-independent; the global loss and quantization still couple the slices.
-- **Matrix:** if the matrix is missing, the script ray-traces it on the full 3D target: about 306 k rays, hours, then GPU out of memory. `algorithms/reference/build_matrix.py` builds it instead with the same ray tracer and settings on one z-slice (about 1 min). Rebuilding α = 2.2 this way matches `algorithms/adhoc/data/` with a 0.5% relative Frobenius difference and the same sparsity.
+- **Matrix:** if the matrix is missing, the script ray-traces it on the full 3D target: about 306 k rays, hours, then GPU out of memory. `algorithms/reference/build_matrix.py` builds it instead with the same ray tracer and settings on one z-slice (about 1 min). Rebuilding α = 2.2 this way matched the original ray-traced α = 2.2 matrix (formerly `algorithms/adhoc/data/`, in git history) with a 0.5% relative Frobenius difference and the same sparsity.
 - **Config and target:** `algorithms/reference/config.py` reads the configuration and TPMS parameters from the reference script with `ast` (only the config statements run). `targets/tpms.py` reproduces the target bit for bit.
 - **`algorithms/adhoc/run.py`:** same common target, matrix, implicit padding and optimization settings as the script (B = 10, p = 3, eps 0.01/0.05, weight 3/1, lr 0.05, momentum 0.5, 8 bit, 250 iterations), float32 propagation.
 - **Remaining algorithm differences:**
