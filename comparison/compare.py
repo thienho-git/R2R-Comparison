@@ -140,17 +140,19 @@ def plotComparison(target, results, config, out_dir):
     fig.savefig(out_dir/"responses_middle_slice.png", dpi=150)
     plt.close(fig)
 
-    #Normalized histograms: fraction of the voxels of each region per bin (each region sums to 1), with its mean dose
+    #Normalized histograms: dose divided by the algorithm's maximum dose (0 to 1), and fraction of the voxels of each
+    #region per bin (each region sums to 1), with the region's mean normalized dose
     fig, axs = plt.subplots(1, 2, figsize=(14, 5))
     part = target > 0
+    bins = np.linspace(0, 1, 201)
     for ax, name in zip(axs, names):
-        dose = np.asarray(results[name]["reconstruction"])
-        bins = np.linspace(0, np.percentile(dose, 99.9), 200)
+        dose = np.asarray(results[name]["reconstruction"], dtype=np.float64)
+        dose = dose/dose.max()
         for mask, region, color in [(~part, "out of part", "C0"), (part, "in part", "C1")]:
             values = dose[mask]
             ax.hist(values, bins=bins, weights=np.full(values.size, 1/values.size), alpha=0.6, color=color, label=region)
             ax.axvline(values.mean(), color=color, linestyle="--", linewidth=2, label=f"mean dose {region}: {values.mean():.3g}")
-        ax.set(title=f"{name}: dose distribution", xlabel="dose", ylabel="fraction of region voxels")
+        ax.set(title=f"{name}: dose distribution", xlabel="dose / max dose", ylabel="fraction of region voxels", xlim=(0, 1))
         ax.legend()
     fig.tight_layout()
     fig.savefig(out_dir/"dose_histograms.png", dpi=150)
